@@ -1,5 +1,4 @@
-"""Pulls numbers from AnalyticsService, formats a report, sends it via
-EmailSender — doesn't know or care how either of those work internally."""
+
 import logging
 from datetime import date
 from typing import List, Tuple

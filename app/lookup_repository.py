@@ -1,6 +1,4 @@
-"""Generic repository for the four lookup entities (Agent, Country,
-TourType, Status) — structurally identical, so one parametrized class
-avoids four near-duplicates."""
+
 import logging
 from typing import Dict, Set, Type
 
@@ -15,8 +13,7 @@ class LookupRepository:
         self._model = model
 
     def get_or_create_many(self, names: Set[str]) -> Dict[str, int]:
-        """Return a {name: id} map for all given names, creating any that
-        don't already exist. Batched, not one query per name."""
+
         if not names:
             return {}
 

@@ -1,8 +1,4 @@
-"""
-ErrorLogger is the abstraction the service layer depends on for persisting
-rejected rows. A future swap to, say, a database table or S3 only requires
-a new implementation of this interface.
-"""
+
 import csv
 import logging
 import os

@@ -1,8 +1,4 @@
-"""
-Central logging configuration. Call configure_logging() once, at app
-startup, before any other module logs anything. Every other module just
-does `logger = logging.getLogger(__name__)` and inherits this config.
-"""
+
 import logging
 import logging.handlers
 import os

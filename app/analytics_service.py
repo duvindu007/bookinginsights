@@ -1,5 +1,5 @@
 """Depends only on BookingRepository, same as BookingUploadService. Thin
-pass-through today; the seam for caching/permissions later if needed."""
+pass-through today;"""
 import logging
 from typing import Dict, List
 

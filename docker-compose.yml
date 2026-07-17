@@ -8,18 +8,9 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-bookingapp}
-      # No default. An empty/missing password makes the official Postgres
-      # image refuse to start (it errors out loudly) rather than silently
-      # running with a value anyone reading this file would know.
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your .env file}
       POSTGRES_DB: ${POSTGRES_DB:-bookings}
     ports:
-      # Host-side port is 5433, not 5432 — avoids clashing with a Postgres
-      # instance you might already have installed/running locally (common
-      # on Windows, where it often runs as an auto-starting service). The
-      # container's internal port is still 5432; bookinginsights talks to it
-      # over the Docker network via "db:5432" regardless of this mapping —
-      # this only affects `psql -h localhost -p ...` from your host.
       - "127.0.0.1:5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -34,21 +25,11 @@ services:
     ports:
       - "8000:8000"
     environment:
-      # Always "db" (the service name above), not localhost — this one is
-      # deliberately not sourced from DATABASE_URL in .env, since that value
-      # is for running the app directly on your host instead of in Docker.
       DATABASE_URL: postgresql://${POSTGRES_USER:-bookingapp}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your .env file}@db:5432/${POSTGRES_DB:-bookings}
       LOG_DIR: /app/logs
       UPLOAD_LOG_DIR: /app/upload_logs
-      # No hardcoded fallback, deliberately. If SECRET_KEY isn't in .env,
-      # this passes an empty string through — main.py's security.py then
-      # generates a random ephemeral key itself and logs a warning, which
-      # is a far safer failure mode than silently using a known value that
-      # anyone reading this file could use to forge login tokens.
       SECRET_KEY: ${SECRET_KEY:-}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
-      # Daily summary email — leave SMTP_HOST unset in .env to leave this
-      # feature off entirely; the app starts fine either way.
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USERNAME: ${SMTP_USERNAME:-}
@@ -75,24 +56,19 @@ services:
     ports:
       - "8501:8501"
     environment:
-      # "bookinginsights" (the service name above), reachable over the compose
-      # network — not localhost, since this is a separate container.
+
       API_BASE_URL: http://bookinginsights:8000
     depends_on:
       bookinginsights:
         condition: service_healthy
 
-  # Fake SMTP server for testing the daily summary email locally — no real
-  # mailbox or credentials needed. Point SMTP_HOST=mailpit in .env, then
-  # every email the backend sends lands here instead of a real inbox.
-  # View them at http://localhost:8025. Not part of a production deploy —
-  # this exists purely for local testing.
+
   mailpit:
     image: axllent/mailpit:latest
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8025:8025"   # web UI — view "sent" emails in a browser
-      - "127.0.0.1:1025:1025"   # SMTP port the backend connects to
+      - "127.0.0.1:8025:8025"   
+      - "127.0.0.1:1025:1025"   
 
 volumes:
   pgdata:

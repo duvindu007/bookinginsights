@@ -69,9 +69,8 @@ if "username" not in st.session_state:
     st.session_state.username = None
 
 
-# =============================================================================
-# Exception hierarchy
-# =============================================================================
+
+# Exceptions
 
 class ApiError(Exception):
     """Base for anything that can go wrong talking to the API. `.message`
@@ -90,9 +89,7 @@ class AuthExpiredError(ApiError):
     and bounce back to the login gate, not just display a message."""
 
 
-# =============================================================================
 # The only two functions that call `requests` directly
-# =============================================================================
 
 def auth_headers():
     return {"Authorization": f"Bearer {st.session_state.token}"} if st.session_state.token else {}
@@ -177,9 +174,7 @@ def download_file(path: str) -> bytes:
     return resp.content
 
 
-# =============================================================================
 # The global exception handler
-# =============================================================================
 
 def handle_api_errors(func):
     """
@@ -204,11 +199,9 @@ def handle_api_errors(func):
     return wrapper
 
 
-# =============================================================================
 # Actions — each one is a plain function that calls api_request()/
 # download_file() and lets errors propagate; @handle_api_errors is the only
 # error handling any of them need.
-# =============================================================================
 
 @handle_api_errors
 def do_login(identifier: str, password: str):
@@ -342,9 +335,7 @@ def build_pdf_report(cache: dict) -> bytes:
     return buffer.getvalue()
 
 
-# =============================================================================
 # UI
-# =============================================================================
 
 def show_login_gate():
     """Blocks the rest of the app until the user is signed in."""

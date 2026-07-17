@@ -1,5 +1,4 @@
-"""EmailSender abstraction; swapping SMTP for SendGrid/SES later means a
-new class against this interface, nothing else changes."""
+
 import logging
 import smtplib
 from abc import ABC, abstractmethod

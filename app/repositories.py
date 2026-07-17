@@ -1,8 +1,5 @@
-"""BookingRepository's interface hasn't changed even though the schema is
-now normalized (Agent/Country/TourType/Status as separate tables) —
-callers still pass/get plain strings; FK resolution is an implementation
-detail of SqlAlchemyBookingRepository."""
 import logging
+import math
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from typing import Dict, List, Set
@@ -16,6 +13,15 @@ from .models import Agent, Booking, Country, Status, TourType
 logger = logging.getLogger(__name__)
 
 
+def _safe_float(value, fallback: float = 0.0) -> float:
+  
+    if value is None or not math.isfinite(value):
+        if value is not None:
+            logger.warning("Non-finite value (%s) encountered in aggregate; using %s", value, fallback)
+        return fallback
+    return value
+
+
 class BookingRepository(ABC):
     @abstractmethod
     def get_existing_booking_numbers(self) -> Set[str]:
@@ -23,8 +29,7 @@ class BookingRepository(ABC):
 
     @abstractmethod
     def bulk_insert(self, rows: List[Dict]) -> int:
-        """Insert rows (booking_no, agent, country, tour_type, booking_date,
-        amount, status — plain values, not FK ids). Returns count inserted."""
+
         raise NotImplementedError
 
     @abstractmethod
@@ -99,7 +104,7 @@ class SqlAlchemyBookingRepository(BookingRepository):
 
     def get_summary(self) -> Dict:
         total_bookings = self._db.query(func.count(Booking.id)).scalar() or 0
-        total_revenue = self._db.query(func.sum(Booking.amount)).scalar() or 0.0
+        total_revenue = _safe_float(self._db.query(func.sum(Booking.amount)).scalar())
         average_booking_value = (total_revenue / total_bookings) if total_bookings else 0.0
 
         status_rows = (
@@ -129,7 +134,7 @@ class SqlAlchemyBookingRepository(BookingRepository):
             .all()
         )
         return [
-            {"country": country, "bookings": bookings, "revenue": round(revenue or 0.0, 2)}
+            {"country": country, "bookings": bookings, "revenue": round(_safe_float(revenue), 2)}
             for country, bookings, revenue in rows
         ]
 
@@ -142,7 +147,7 @@ class SqlAlchemyBookingRepository(BookingRepository):
             .all()
         )
         return [
-            {"agent": agent, "bookings": bookings, "revenue": round(revenue or 0.0, 2)}
+            {"agent": agent, "bookings": bookings, "revenue": round(_safe_float(revenue), 2)}
             for agent, bookings, revenue in rows
         ]
 
@@ -154,7 +159,7 @@ class SqlAlchemyBookingRepository(BookingRepository):
         for booking_date, amount in rows:
             month_key = booking_date.strftime("%Y-%m")
             aggregated[month_key]["bookings"] += 1
-            aggregated[month_key]["revenue"] += amount
+            aggregated[month_key]["revenue"] += _safe_float(amount)
 
         return [
             {"month": month, "bookings": data["bookings"], "revenue": round(data["revenue"], 2)}

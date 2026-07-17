@@ -1,7 +1,9 @@
-# Booking CSV Upload API
+# Booking Insights
 
-A FastAPI service that accepts a CSV of bookings, validates every row, and
-stores the valid ones in a SQLite database.
+A FastAPI + Streamlit app for booking data: upload a CSV, every row gets
+validated, valid rows land in PostgreSQL. Multi-user accounts (JWT auth),
+a live analytics dashboard with PDF export, and an optional daily summary
+email round it out.
 
 ## Columns expected in the CSV
 `Booking No, Agent, Country, Tour Type, Booking Date, Amount, Status`
@@ -12,7 +14,11 @@ stores the valid ones in a SQLite database.
    (`YYYY-MM-DD`, `DD-MM-YYYY`, `DD/MM/YYYY`, or `MM/DD/YYYY`).
 3. **Duplicate Booking Numbers** — rejected if the Booking No already exists
    in the database *or* appears more than once in the uploaded file.
-4. **Negative Amounts** — `Amount` must be a valid non-negative number.
+4. **Invalid Amounts** — `Amount` must be a valid, finite, non-negative
+   number. Non-numeric text is rejected, and so are `nan`/`inf`/`-inf`/
+   `Infinity`-style strings — Python's own `float()` parses those into
+   real (non-JSON-safe) special values, so they're explicitly checked for
+   and rejected rather than silently accepted as valid numbers.
 
 Rows that fail any rule are **removed** (never written to the database) and
 **logged**: every rejected row is written to a CSV log file on disk
@@ -38,7 +44,7 @@ bookings(
   status_id     -> statuses.id
 )
 
-users(id, username, hashed_password, created_at)   -- unrelated to bookings
+users(id, username, email, hashed_password, created_at)   -- unrelated to bookings
 ```
 
 **Uploads still send plain strings** ("TUI", "Germany", ...) — the CSV
@@ -70,7 +76,7 @@ startup and runs normally without it. Config (all via env vars):
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `SMTP_HOST` | *(unset \u2014 feature off)* | SMTP server address |
+| `SMTP_HOST` | *(unset — feature off)* | SMTP server address |
 | `SMTP_PORT` | `587` | SMTP port |
 | `SMTP_USERNAME` / `SMTP_PASSWORD` | *(empty)* | SMTP auth, if your server needs it |
 | `SMTP_FROM_EMAIL` | `booking-manifest@example.com` | From address |
@@ -136,13 +142,17 @@ SOLID principles:
 | `analytics_service.py` | Orchestrates summary/revenue/agent/trend queries via the repository |
 | `daily_summary_service.py` | Builds the daily email report content and sends it, via `AnalyticsService` + `EmailSender` |
 | `email_sender.py` | `EmailSender` interface + SMTP implementation |
-| `scheduler.py` | APScheduler wiring \u2014 reads env vars, schedules the daily job, skips gracefully if unconfigured |
+| `scheduler.py` | APScheduler wiring — reads env vars, schedules the daily job, skips gracefully if unconfigured |
+| `auth_service.py` | Signup/login logic — password hashing, username/email uniqueness, credential checks |
+| `security.py` | Password hashing (bcrypt) and JWT creation/verification |
+| `user_repository.py` | `UserRepository` interface + SQLAlchemy implementation |
+| `auth_schemas.py` | Pydantic request/response models for signup/login (`UserSignup`, `UserOut`, `Token`) |
 | `validators.py` | One class per validation rule, behind a shared `RowValidator` interface |
 | `csv_reader.py` | Parses CSV text into rows, checks required headers |
 | `repositories.py` | `BookingRepository` interface + SQLAlchemy implementation |
 | `lookup_repository.py` | Generic get-or-create repository shared by Agent/Country/TourType/Status |
 | `error_logger.py` | `ErrorLogger` interface + CSV-file implementation |
-| `models.py` | SQLAlchemy ORM model (`Booking`) |
+| `models.py` | SQLAlchemy ORM models — `Booking`, `Agent`, `Country`, `TourType`, `Status`, `User` |
 | `database.py` | DB engine/session configuration only |
 | `schemas.py` | Plain dataclasses (`ValidationError`, `UploadResult`) passed between layers |
 | `logging_config.py` | Central `logging` setup (console + rotating file handler), called once at startup |
@@ -166,7 +176,7 @@ SOLID principles:
 - **Dependency Inversion** — `BookingUploadService` depends on the
   `BookingRepository` and `ErrorLogger` abstractions, not on SQLAlchemy or
   the filesystem directly. Concrete implementations are constructed only in
-  `app/api.py`'s dependency-wiring functions, so swapping SQLite for Postgres
+  `app/api.py`'s dependency-wiring functions, so swapping the SQL engine
   or a file logger for a database-table logger touches one function, not
   the service logic.
 
@@ -308,10 +318,11 @@ fails fast with a clear error if `DATABASE_URL` isn't set or isn't a
 cp .env.example .env
 docker compose up --build
 ```
-This starts a Postgres 16 container (`db`) alongside the API, configured
-from `.env` (`POSTGRES_USER`/`PASSWORD`/`DB`), and the app creates the
-`bookings` table on first startup. Data persists in a named Docker volume
-across restarts.
+This starts four containers — Postgres (`db`), the backend, the Streamlit
+frontend, and Mailpit (a fake SMTP server for local email testing, see
+"Daily summary email" above) — wired together via the same `.env`. The
+app creates the `bookings`/`users`/etc. tables on first startup. Data
+persists in a named Docker volume across restarts.
 
 Postgres is also exposed on `localhost:5433` if you want to `psql` in from
 your host (note: 5433, not the usual 5432 — see docker-compose.yml comment
@@ -369,9 +380,6 @@ Paste the output as `SECRET_KEY` in `.env`. If left unset, the app
 generates a random one on every restart — fine for a five-minute local
 test, but every token breaks on restart, and multiple instances won't
 agree on tokens.
-If `SECRET_KEY` isn't set, the app generates a random one on startup and
-logs a warning — fine for a quick local test, but every token becomes
-invalid on restart and multiple instances won't agree on tokens.
 
 ### `POST /auth/signup`
 ```bash
@@ -379,7 +387,7 @@ curl -X POST http://localhost:8000/auth/signup \
   -H "Content-Type: application/json" \
   -d '{"username": "alice", "email": "alice@example.com", "password": "supersecret123"}'
 ```
-Username: 3\u201350 characters. Email: validated format. Password: minimum
+Username: 3–50 characters. Email: validated format. Password: minimum
 8 characters. Returns `201` with the new user's id/username/email/created_at,
 or `400` if the username **or** the email is already taken (the error
 tells you which).
@@ -521,6 +529,13 @@ All four analytics endpoints currently include **every** row regardless of
 revenue). If you want cancelled bookings excluded from revenue, let me know
 and I'll add a status filter.
 
+### `POST /analytics/summary-email/send`
+Sends the daily summary email immediately (see "Daily summary email"
+above for full details). Returns `503` if SMTP isn't configured.
+```bash
+curl -X POST http://localhost:8000/analytics/summary-email/send
+```
+
 ### `GET /upload-logs`
 Lists every error log file generated so far, most recent first.
 
@@ -537,13 +552,24 @@ curl -O http://localhost:8000/upload-logs/20260715T090000_bookings_a1b2c3d4_erro
 ```
 
 ## Notes
-- Tested against a 200,000-row CSV: full validate + bulk insert completes
-  in ~5 seconds.
+- Validated at scale twice: a clean 200,000-row upload completes in ~5
+  seconds; a 50,000-row upload with ~47% deliberately invalid data (bad
+  dates, negative/non-numeric/non-finite amounts, missing fields,
+  duplicates) completes in ~5.4 seconds with every rejection correctly
+  categorized.
 - Inserts are batched (5,000 rows per commit) for performance on large files.
-- Database file (`bookings.db`) is created automatically on first run.
+- Amount parsing rejects `NaN`/`Infinity`/`-Infinity` strings, not just
+  non-numeric text — Python's `float()` parses those into real special
+  values that would otherwise corrupt `SUM()`/`AVG()` aggregates and
+  break JSON serialization. There's also a defensive guard in
+  `repositories.py` so even a non-finite value that somehow reaches the
+  database (e.g. inserted outside the app) can't crash an analytics
+  endpoint — though the real fix for corrupted data is finding and
+  removing it: `SELECT ... WHERE amount = 'NaN'::float` (Postgres treats
+  NaN as equal to itself, unlike standard IEEE754).
 - Error logs are written to the `upload_logs/` folder (created automatically)
   and never deleted automatically — clean them up periodically if disk space
   matters for your deployment.
-- To switch to Postgres/MySQL later, just change `DATABASE_URL` in
-  `database.py` to your connection string (e.g.
-  `postgresql://user:pass@host/dbname`) — the rest of the code is unchanged.
+- No migration tool (e.g. Alembic) — schema changes require dropping and
+  recreating the affected table(s), which means losing their data. Ask if
+  you want Alembic added; it would remove this limitation going forward.

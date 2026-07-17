@@ -1,0 +1,261 @@
+{
+  "info": {
+    "name": "Booking Insights API",
+    "description": "FastAPI backend for the Booking Insights app — CSV upload/validation, JWT auth, analytics, and the daily summary email. All requests except signup/login/root reuse the `access_token` collection variable, which the Login request captures automatically — run Signup then Login once, then every other request just works.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{access_token}}", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000", "type": "string" },
+    { "key": "access_token", "value": "", "type": "string" },
+    { "key": "username", "value": "demo_user", "type": "string" },
+    { "key": "email", "value": "demo_user@example.com", "type": "string" },
+    { "key": "password", "value": "demo_password_123", "type": "string" },
+    { "key": "error_log_filename", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Root health check",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/", "host": ["{{base_url}}"], "path": [""] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Signup",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/auth/signup", "host": ["{{base_url}}"], "path": ["auth", "signup"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// 201 = created. 400 is fine too (username/email already taken from",
+                  "// a previous run) — either way, proceed to Login next.",
+                  "pm.test('Signup succeeded or user already exists', function () {",
+                  "    pm.expect([201, 400]).to.include(pm.response.code);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "username", "value": "{{username}}", "type": "text" },
+                { "key": "password", "value": "{{password}}", "type": "text" }
+              ]
+            },
+            "url": { "raw": "{{base_url}}/auth/login", "host": ["{{base_url}}"], "path": ["auth", "login"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Login succeeded', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('Response has an access_token', function () {",
+                  "    pm.expect(body.access_token).to.be.a('string');",
+                  "});",
+                  "",
+                  "// Every other request in this collection uses {{access_token}} via",
+                  "// the collection-level bearer auth — this is the only place it's set.",
+                  "if (body.access_token) {",
+                  "    pm.collectionVariables.set('access_token', body.access_token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get current user (/auth/me)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/auth/me", "host": ["{{base_url}}"], "path": ["auth", "me"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns the logged-in user', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().username).to.eql(pm.collectionVariables.get('username'));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Upload",
+      "item": [
+        {
+          "name": "Upload CSV",
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": "" }
+              ]
+            },
+            "url": { "raw": "{{base_url}}/upload-csv", "host": ["{{base_url}}"], "path": ["upload-csv"] },
+            "description": "Select a CSV file in the Body tab (Postman requires picking the file manually in the UI — the `src` path can't be pre-filled for security reasons). Columns: Booking No, Agent, Country, Tour Type, Booking Date, Amount, Status."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Upload processed', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "if (body.error_log_file) {",
+                  "    pm.collectionVariables.set('error_log_filename', body.error_log_file);",
+                  "}",
+                  "",
+                  "pm.test('Response has the expected shape', function () {",
+                  "    pm.expect(body).to.have.property('rows_inserted');",
+                  "    pm.expect(body).to.have.property('rows_rejected');",
+                  "    pm.expect(body).to.have.property('errors_preview');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "List error logs",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/upload-logs", "host": ["{{base_url}}"], "path": ["upload-logs"] }
+          }
+        },
+        {
+          "name": "Download an error log",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/upload-logs/{{error_log_filename}}",
+              "host": ["{{base_url}}"],
+              "path": ["upload-logs", "{{error_log_filename}}"]
+            },
+            "description": "Uses {{error_log_filename}}, captured automatically from the last Upload CSV response that had rejected rows. Run Upload CSV with a file containing at least one invalid row first."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Bookings",
+      "item": [
+        {
+          "name": "Booking count",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/bookings/count", "host": ["{{base_url}}"], "path": ["bookings", "count"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Analytics",
+      "item": [
+        {
+          "name": "Summary",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/analytics/summary", "host": ["{{base_url}}"], "path": ["analytics", "summary"] }
+          }
+        },
+        {
+          "name": "Revenue by country",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/analytics/revenue-by-country",
+              "host": ["{{base_url}}"],
+              "path": ["analytics", "revenue-by-country"]
+            }
+          }
+        },
+        {
+          "name": "Bookings by agent",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/analytics/bookings-by-agent",
+              "host": ["{{base_url}}"],
+              "path": ["analytics", "bookings-by-agent"]
+            }
+          }
+        },
+        {
+          "name": "Monthly revenue trend",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/analytics/monthly-revenue-trend",
+              "host": ["{{base_url}}"],
+              "path": ["analytics", "monthly-revenue-trend"]
+            }
+          }
+        },
+        {
+          "name": "Send daily summary email now",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/analytics/summary-email/send",
+              "host": ["{{base_url}}"],
+              "path": ["analytics", "summary-email", "send"]
+            },
+            "description": "Returns 503 if SMTP isn't configured in the backend's .env (SMTP_HOST / SUMMARY_EMAIL_RECIPIENTS) — that's expected unless you've set those."
+          }
+        }
+      ]
+    }
+  ]
+}

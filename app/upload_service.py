@@ -1,6 +1,3 @@
-"""Coordinates one upload: read -> validate -> insert -> log. Depends only
-on CsvReader/BookingRepository/ErrorLogger abstractions and a
-validator_factory — never constructs a concrete database/filesystem/validator."""
 import logging
 from typing import Callable, Dict, List, Set
 

@@ -1,9 +1,3 @@
-"""
-Schedules DailySummaryService.send_daily_summary() to run once a day.
-Reads all config from the environment; if SMTP host or recipients aren't
-configured, scheduling is skipped with a warning rather than failing
-startup — the rest of the API works fine without email configured.
-"""
 import logging
 import os
 from typing import List, Optional
