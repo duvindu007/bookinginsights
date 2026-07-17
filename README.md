@@ -5,6 +5,24 @@ validated, valid rows land in PostgreSQL. Multi-user accounts (JWT auth),
 a live analytics dashboard with PDF export, and an optional daily summary
 email round it out.
 
+## Screenshots
+
+Add screenshots here — save each as a `.png` in `docs/images/` using the
+filenames below, and they'll render automatically (standard markdown
+image syntax, already wired up):
+
+| Screen | Path |
+|---|---|
+| Register | `docs/images/register.png` |
+| Log in | `docs/images/login.png` |
+| Upload | `docs/images/upload.png` |
+| Dashboard | `docs/images/dashboard.png` |
+
+| | |
+|---|---|
+| **Register** ![Register](docs/images/register.png) | **Log in** ![Login](docs/images/login.png) |
+| **Upload** ![Upload](docs/images/upload.png) | **Dashboard** ![Dashboard](docs/images/dashboard.png) |
+
 ## Columns expected in the CSV
 `Booking No, Agent, Country, Tour Type, Booking Date, Amount, Status`
 
@@ -432,6 +450,14 @@ Returns the currently authenticated user — useful for checking a token is
 still valid without hitting a data endpoint.
 
 ## Endpoints
+
+`postman_collection.json` has every endpoint below pre-built — import it
+into Postman, run **Auth > Signup** then **Auth > Login** once (the token
+is captured automatically and reused by every other request via
+collection-level auth), and everything else just works. **Upload CSV**
+needs a file picked manually in the Body tab (Postman doesn't allow a
+file path to be pre-filled, for security reasons).
+
 
 All routes below require `Authorization: Bearer <token>` (see
 Authentication above) — the `curl` examples omit it for brevity, but add
